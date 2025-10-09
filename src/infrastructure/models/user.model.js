@@ -22,31 +22,14 @@ const userSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
-  
-  // Company Information
-  companyName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  companyType: {
-    type: String,
-    required: true,
-    enum: ['real-estate', 'construction', 'property-management'],
-    default: 'real-estate'
-  },
-  licenseNumber: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  city: {
-    type: String,
-    required: true,
-    enum: ['riyadh', 'jeddah', 'dammam', 'mecca', 'medina']
+
+  // Company Reference
+  company: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company'
   },
   
   // Account Information
@@ -55,7 +38,19 @@ const userSchema = new mongoose.Schema({
     required: true,
     minlength: 6
   },
-  
+
+  type: {
+    type: String,
+    enum: ['company', 'individual'],
+    required: true
+  },
+
+  role: {
+    type: String,
+    enum: ['manager', 'valuater', 'data entry', 'inspector'],
+    default: 'manager'
+  },
+
   // Account Status
   isActive: {
     type: Boolean,

@@ -5,6 +5,7 @@ const app = require('./app');
 const http = require('http');
 const { Server } = require('socket.io');
 const { setSocketIO, sendCommand, activeTasks } = require('./presentation/controllers/halfReport.controller');
+const Company = require('./infrastructure/models/company.model');
 
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
@@ -298,8 +299,30 @@ io.on('connection', (socket) => {
 });
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log('✅ MongoDB connected');
+
+    // Ensure no legacy unique index on secretKey exists
+    try {
+      const indexes = await Company.collection.indexes();
+      const hasSecretKeyIndex = indexes.some(idx => idx.name === 'secretKey_1');
+      if (hasSecretKeyIndex) {
+        await Company.collection.dropIndex('secretKey_1');
+        console.log('🛠️ Dropped legacy index secretKey_1 from companies collection');
+      }
+    } catch (indexErr) {
+      if (indexErr && indexErr.codeName !== 'IndexNotFound') {
+        console.error('Index cleanup error:', indexErr);
+      }
+    }
+
+    // Sync indexes to schema
+    try {
+      await Company.syncIndexes();
+    } catch (syncErr) {
+      console.error('syncIndexes error:', syncErr);
+    }
+
     server.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });

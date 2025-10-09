@@ -5,15 +5,16 @@ const sendMessage = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { message } = req.body;
-    const sender = req.user.email === "admin.tickets@gmail.com" ? "support" : "customer";
+    const isSupportAccount = ["admin.tickets@gmail.com", "super.admin@gmail.com"].includes((req.user.email || "").toLowerCase());
+    const sender = isSupportAccount ? "support" : "customer";
 
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
     }
 
-    // Check if user is authorized (ticket creator or admin)
-    if (req.user.email !== "admin.tickets@gmail.com" && ticket.createdBy.toString() !== req.user.userId) {
+    // Check if user is authorized (ticket creator or support/super admin)
+    if (!isSupportAccount && ticket.createdBy.toString() !== req.user.userId) {
       return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -52,8 +53,9 @@ const getMessages = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
     }
 
-    // Check if user is authorized (ticket creator or admin)
-    if (req.user.email !== "admin.tickets@gmail.com" && ticket.createdBy.toString() !== req.user.userId) {
+    // Check if user is authorized (ticket creator or support/super admin)
+    const isSupportAccount = ["admin.tickets@gmail.com", "super.admin@gmail.com"].includes((req.user.email || "").toLowerCase());
+    if (!isSupportAccount && ticket.createdBy.toString() !== req.user.userId) {
       return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
 

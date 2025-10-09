@@ -45,3 +45,5 @@ Thumbs.db
 
 #env
 .env
+
+src/scripts/equip/__pycache__

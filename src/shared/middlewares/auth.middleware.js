@@ -22,7 +22,8 @@ const authMiddleware = async (req, res, next) => {
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const secret = process.env.JWT_SECRET || 'default_jwt_secret_for_app';
+    const decoded = jwt.verify(token, secret);
     
     // Check if user still exists
     const user = await User.findById(decoded.userId);

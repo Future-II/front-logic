@@ -48,11 +48,12 @@ const createTicket = async (req, res) => {
 const getAllTickets = async (req, res) => {
   try {
     let tickets;
-    const adminEmail = "admin.tickets@gmail.com";
-    if (req.user.email === adminEmail) {
-      tickets = await Ticket.find().populate('createdBy', 'firstName lastName').sort({ createdAt: -1 });
+    const adminEmails = ["super.admin@gmail.com", "admin.tickets@gmail.com"];
+    const isPrivileged = adminEmails.includes((req.user.email || "").toLowerCase());
+    if (isPrivileged) {
+      tickets = await Ticket.find().populate('createdBy', 'firstName lastName email company').sort({ createdAt: -1 });
     } else {
-      tickets = await Ticket.find({ createdBy: req.user.userId }).populate('createdBy', 'firstName lastName').sort({ createdAt: -1 });
+      tickets = await Ticket.find({ createdBy: req.user.userId }).populate('createdBy', 'firstName lastName email company').sort({ createdAt: -1 });
     }
     res.status(200).json({
       success: true,
@@ -103,14 +104,12 @@ const updateTicketStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
     }
 
-    // Check if user is authorized (ticket creator or admin)
-    const adminEmail = "admin.tickets@gmail.com";
-    if (req.user.email !== adminEmail && ticket.createdBy.toString() !== req.user.userId) {
+    // Check if user is authorized (ticket creator or support/super admin)
+    const adminEmails = ["super.admin@gmail.com", "admin.tickets@gmail.com"];
+    const isPrivileged = adminEmails.includes((req.user.email || "").toLowerCase());
+    if (!isPrivileged && ticket.createdBy.toString() !== req.user.userId) {
       return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
-
-    // Users can change status to any value, admins can change any status
-    // No restrictions for users on status changes
 
     // Update fields
     if (status) ticket.status = status;

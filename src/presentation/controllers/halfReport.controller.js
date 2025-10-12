@@ -6,6 +6,7 @@ const reportDataExtract = require("../../application/taqeem/reportDataExtract.uc
 const { getAssetsByUserIdUC } = require("../../application/reports/getAssetsByUserId.uc.js");
 const { getHalfReportsByUserIdUC } = require("../../application/reports/getHalfReportsByUserId.uc.js");
 const { noBaseDataExtraction } = require("../../application/taqeem/noBaseDataExtraction.uc.js")
+const { formDataExtraction } = require("../../application/taqeem/formDataExtraction.uc.js")
 
 let pyWorker = null;
 let stdoutBuffer = "";
@@ -444,6 +445,24 @@ const extractExistingReportData = async (req, res, next) => {
   }
 };
 
+const withFormDataExtraction = async (req, res, next) => {
+  const { formData } = req.body;
+  const excelFilePath = req.files?.excel?.[0]?.path;
+  const pdfFilePaths = req.files?.pdfs?.[0]?.path;
+  const userId = req.user.userId;
+
+  try {
+    const result = await formDataExtraction(excelFilePath, pdfFilePaths, userId, formData);
+    if (result.status !== "SUCCESS") {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+    res.json({ success: true, status: "SAVED", data: result.data, message: "Report saved." });
+  } catch (err) {
+    console.error("[formDataExtraction] error:", err);
+    next(err instanceof AppError ? err : new AppError(String(err), 500));
+  }
+};
+
 const addAssetsToReport = async (req, res, next) => {
   const { reportId } = req.body;
 
@@ -475,6 +494,7 @@ module.exports = {
   addAssetsToReport,
   extractExistingReportData,
   retryMacros,
+  withFormDataExtraction,
   reportDataExtraction,
   getHalfReportsByUserId,
   checkMacros,

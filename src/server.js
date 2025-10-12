@@ -308,7 +308,6 @@ async function initializeServer() {
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully');
   
-  // Clean up all user sessions
   for (const userId of userSessions.keys()) {
     const userSession = userSessions.get(userId);
     if (userSession && userSession.cleanupTimeout) {

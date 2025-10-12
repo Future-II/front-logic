@@ -11,6 +11,7 @@ const {
   extractExistingReportData, 
   getAssetsByUserId, 
   checkAssets,
+  withFormDataExtraction,
   checkMacros,
   pause,
   stop,
@@ -31,6 +32,10 @@ scriptRouter.post(
   ]),
   runTaqeemScript
 );
+scriptRouter.post("/equip/withFormExtract", authMiddleware, upload.fields([
+  { name: 'excel', maxCount: 1 },
+  { name: 'pdfs', maxCount: 10 }
+]), withFormDataExtraction);
 
 scriptRouter.post('/retryTaqeem/:batchId', retryTaqeemScript);
 

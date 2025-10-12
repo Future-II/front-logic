@@ -24,9 +24,9 @@ const formatDateTime = (value) => {
     
     if (typeof value === 'string') {
         const dateFormats = [
-            /(\d{1,2})\/(\d{1,2})\/(\d{4})/, // DD/MM/YYYY
-            /(\d{4})-(\d{1,2})-(\d{1,2})/,   // YYYY-MM-DD
-            /(\d{1,2})-(\d{1,2})-(\d{4})/    // DD-MM-YYYY
+            /(\d{1,2})\/(\d{1,2})\/(\d{4})/, 
+            /(\d{4})-(\d{1,2})-(\d{1,2})/,   
+            /(\d{1,2})-(\d{1,2})-(\d{4})/   
         ];
         
         for (const format of dateFormats) {

@@ -473,12 +473,27 @@ async def handle_macros_multi(browser, record, tab_nums=3, batch_size=10, contro
     return True
 
 async def get_first_macro_id(page):
-    tbody = await wait_for_element(page, "tbody", timeout=10)
+    tbody = await wait_for_element(page, "#m-table", timeout=100)
+    if not tbody:
+        return {"status": "FAILED", "error": "Could not find macro table"}
+    
     trs = await tbody.query_selector_all("tr") if tbody else []
-    first_tr = trs[0] if trs else None
-    tds = await first_tr.query_selector_all("td") if first_tr else []
-    link = await tds[0].query_selector("a") if tds else None
-    return int(link.text.strip()) if link else None
+    if not trs:
+        return {"status": "FAILED", "error": "Could not find macro table rows"}
+    
+    first_tr = trs[1] if trs else None
+    if not first_tr:
+        return {"status": "FAILED", "error": "Could not find macro table row"}
+    tds = first_tr.children if first_tr else []
+    if not tds:
+        return {"status": "FAILED", "error": "Could not find macro table row cells"}
+    first_td = tds[0]
+    print(f"first_td: {first_td}")
+    id = first_td.text
+    print(f"id: {id}")
+    if not id:
+        return {"status": "FAILED", "error": "Could not find macro table row link"}
+    return int(id) if id else None
 
 async def fill_macro_form(page, macro_id, macro_data, field_map, field_types, control_state=None, report_id=None):
     await page.get(f"https://qima.taqeem.sa/report/macro/{macro_id}/edit")
@@ -507,6 +522,8 @@ async def handle_macro_edits(browser, record, tabs_num=3, control_state=None, re
     first_macro_id = await get_first_macro_id(main_page)
     if first_macro_id is None:
         return {"status":"FAILED","error":"Could not determine first macro id"}
+    print(f"First macro id: {first_macro_id} with type {type(first_macro_id)}")
+    
 
     chunks = balanced_chunks(asset_data, tabs_num)
     pages = [main_page] + [await browser.get("", new_tab=True) for _ in range(tabs_num - 1)]

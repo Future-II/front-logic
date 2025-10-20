@@ -236,6 +236,69 @@ io.on('connection', (socket) => {
   });
 
   // Keep your existing pause_form_fill, resume_form_fill, stop_form_fill handlers...
+  // Add these to your socket event handlers in server.js
+socket.on('pause_form_fill', async (data) => {
+    const { reportId } = data;
+    console.log(`[SOCKET] pause_form_fill received for report: ${reportId}`);
+    
+    try {
+        // Call the pause controller
+        const response = await require('./presentation/controllers/halfReport.controller').pause({ body: { id: reportId } }, { 
+            json: (result) => {
+                console.log(`[SOCKET] Pause successful for report ${reportId}:`, result);
+                socket.emit('pause_form_fill_ack', { reportId, status: 'PAUSED' });
+            }
+        }, (error) => {
+            console.error(`[SOCKET] Pause error for report ${reportId}:`, error);
+            socket.emit('pause_form_fill_error', { reportId, error: error.message });
+        });
+    } catch (error) {
+        console.error(`[SOCKET] Pause failed for report ${reportId}:`, error);
+        socket.emit('pause_form_fill_error', { reportId, error: error.message });
+    }
+});
+
+socket.on('resume_form_fill', async (data) => {
+    const { reportId } = data;
+    console.log(`[SOCKET] resume_form_fill received for report: ${reportId}`);
+    
+    try {
+        // Call the resume controller
+        const response = await require('./presentation/controllers/halfReport.controller').resume({ body: { id: reportId } }, { 
+            json: (result) => {
+                console.log(`[SOCKET] Resume successful for report ${reportId}:`, result);
+                socket.emit('resume_form_fill_ack', { reportId, status: 'RESUMED' });
+            }
+        }, (error) => {
+            console.error(`[SOCKET] Resume error for report ${reportId}:`, error);
+            socket.emit('resume_form_fill_error', { reportId, error: error.message });
+        });
+    } catch (error) {
+        console.error(`[SOCKET] Resume failed for report ${reportId}:`, error);
+        socket.emit('resume_form_fill_error', { reportId, error: error.message });
+    }
+});
+
+socket.on('stop_form_fill', async (data) => {
+    const { reportId } = data;
+    console.log(`[SOCKET] stop_form_fill received for report: ${reportId}`);
+    
+    try {
+        // Call the stop controller
+        const response = await require('./presentation/controllers/halfReport.controller').stop({ body: { id: reportId } }, { 
+            json: (result) => {
+                console.log(`[SOCKET] Stop successful for report ${reportId}:`, result);
+                socket.emit('stop_form_fill_ack', { reportId, status: 'STOPPED' });
+            }
+        }, (error) => {
+            console.error(`[SOCKET] Stop error for report ${reportId}:`, error);
+            socket.emit('stop_form_fill_error', { reportId, error: error.message });
+        });
+    } catch (error) {
+        console.error(`[SOCKET] Stop failed for report ${reportId}:`, error);
+        socket.emit('stop_form_fill_error', { reportId, error: error.message });
+    }
+});
 
   socket.on('get_active_sessions', () => {
     const sessions = Array.from(activeSessions.entries()).map(([reportId, session]) => ({

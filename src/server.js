@@ -10,7 +10,6 @@ const Company = require('./infrastructure/models/company.model');
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 
-// Enhanced Socket.IO configuration with better timeout settings
 const io = new Server(server, {
   cors: {
     origin: "*",

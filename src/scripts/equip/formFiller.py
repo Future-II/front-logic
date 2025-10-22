@@ -27,17 +27,6 @@ async def wait_for_element(page, selector, timeout=30, check_interval=0.5):
         await asyncio.sleep(check_interval)
     return None
 
-import json
-import asyncio
-
-import asyncio
-
-import asyncio
-import json
-
-import asyncio
-import json
-
 async def set_location(page, country_code, region_code, city_code):
     try:
         async def set_field(selector, value):

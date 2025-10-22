@@ -24,6 +24,7 @@ const halfReportSchema = new mongoose.Schema({
   special_assumptions: { type: String },
   value: { type: String },
   valuation_currency: { type: String },
+  
 
   report_asset_file: { type: String },
   client_name: { type: String },
@@ -36,6 +37,8 @@ const halfReportSchema = new mongoose.Schema({
 
   startSubmitTime: { type: Date },
   endSubmitTime: { type: Date },
+
+  checked: {type: Boolean, default: false},
 
   asset_data: [{
     id: { type: String },
@@ -64,6 +67,7 @@ const halfReportSchema = new mongoose.Schema({
     country: { type: String, default: "المملكة العربية السعودية" },
     region: { type: String },
     city: { type: String },
+
   }],
 }, { timestamps: true });
 

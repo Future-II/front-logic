@@ -267,6 +267,7 @@ class ReportService {
       }
     ]);
 
+
     // Get additional aggregations for detailed statistics
     const monthlyStats = await Report.aggregate([
       {

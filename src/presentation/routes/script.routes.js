@@ -10,7 +10,7 @@ const {
   addAssetsToReport, 
   extractExistingReportData, 
   getAssetsByUserId, 
-  checkAssets,
+  getHalfReportById,
   withFormDataExtraction,
   checkMacros,
   pause,
@@ -18,7 +18,8 @@ const {
   resume,
   retryMacros,
   getHalfReportsByUserId,
-  reportDataExtraction
+  reportDataExtraction,
+  setCheck
  } = require('../controllers/halfReport.controller'); 
 const authMiddleware = require('../../shared/middlewares/auth.middleware');
 
@@ -60,9 +61,11 @@ scriptRouter.post('/equip/fillForm2', authMiddleware, fillReportForm2);
 
 scriptRouter.get('/equip/assets', authMiddleware, getAssetsByUserId);
 scriptRouter.get('/equip/reports', authMiddleware, getHalfReportsByUserId);
+scriptRouter.get('/equip/report', authMiddleware, getHalfReportById);
 
 scriptRouter.post('/equip/check', authMiddleware, checkMacros);
 scriptRouter.post('/equip/retry', authMiddleware, retryMacros);
+scriptRouter.post('/equip/checkReport', authMiddleware, setCheck);
 
 scriptRouter.post('/equip/pause', authMiddleware, pause);
 scriptRouter.post('/equip/resume', authMiddleware, resume);

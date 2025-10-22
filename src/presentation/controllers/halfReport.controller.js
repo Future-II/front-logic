@@ -7,6 +7,8 @@ const { getAssetsByUserIdUC } = require("../../application/reports/getAssetsByUs
 const { getHalfReportsByUserIdUC } = require("../../application/reports/getHalfReportsByUserId.uc.js");
 const { noBaseDataExtraction } = require("../../application/taqeem/noBaseDataExtraction.uc.js")
 const { formDataExtraction } = require("../../application/taqeem/formDataExtraction.uc.js")
+const { getHalfReportByIdUC } = require("../../application/reports/getHalfReportById.uc.js")
+const { checkHalfReport } = require("../../application/reports/checkHalfReport.uc.js")
 
 let pyWorker = null;
 let stdoutBuffer = "";
@@ -475,6 +477,81 @@ const addAssetsToReport = async (req, res, next) => {
   }
 };
 
+const getHalfReportById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId; // From authentication middleware
+    
+    // Query parameters for customization
+    const {
+      includeAssets = 'true',
+      assetFields = '',
+      checkOwnership = 'false',
+      summary = 'false'
+    } = req.query;
+
+    // Parse boolean parameters
+    const includeAssetsBool = includeAssets.toLowerCase() === 'true';
+    const checkOwnershipBool = checkOwnership.toLowerCase() === 'true';
+    const summaryBool = summary.toLowerCase() === 'true';
+
+    // Parse asset fields array
+    const assetFieldsArray = assetFields ? assetFields.split(',').map(field => field.trim()) : [];
+
+    const options = {
+      includeAssets: includeAssetsBool,
+      assetFields: assetFieldsArray,
+      checkOwnership: checkOwnershipBool,
+      userId: checkOwnershipBool ? userId : null
+    };
+
+    let result;
+    
+    if (summaryBool) {
+      result = await getHalfReportByIdUC.getReportSummary(id);
+    } else {
+      result = await getHalfReportByIdUC.execute(id, options);
+    }
+
+    res.status(200).json({
+      success: true,
+      status: 'SUCCESS',
+      data: result.data,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error(`[getHalfReportById] Controller error for ID ${req.params.id}:`, error);
+    
+    // Determine appropriate status code
+    let statusCode = 500;
+    let message = 'Internal server error';
+
+    if (error.statusCode) {
+      statusCode = error.statusCode;
+      message = error.message;
+    } else if (error.message.includes('not found')) {
+      statusCode = 404;
+      message = 'Report not found';
+    } else if (error.message.includes('access denied')) {
+      statusCode = 403;
+      message = 'Access denied to this report';
+    } else if (error.message.includes('Invalid report ID')) {
+      statusCode = 400;
+      message = error.message;
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      status: 'ERROR',
+      message: message,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
 const checkAssets = async (req, res, next) => {
   const { reportId } = req.body;
   
@@ -484,6 +561,27 @@ const checkAssets = async (req, res, next) => {
   } catch (err) {
     console.error("[checkAssets] error:", err);
     next(err instanceof AppError ? err : new AppError(String(err), 500));
+  }
+};
+
+const setCheck = async (req, res, next) => {
+  try {
+    const { id } = req.body;
+    
+    const updatedReport = await checkHalfReport(id);
+    
+    res.json({ 
+      success: true, 
+      data: updatedReport
+    });
+  } catch (err) {
+    console.error("[setCheck] error:", err);
+    
+    const statusCode = err.message === 'Report not found' ? 404 : 500;
+    res.status(statusCode).json({
+      success: false,
+      error: err.message
+    });
   }
 };
 
@@ -498,8 +596,10 @@ module.exports = {
   reportDataExtraction,
   getHalfReportsByUserId,
   checkMacros,
+  getHalfReportById,
   checkAssets,
   getAssetsByUserId,
+  setCheck,
   pause,
   resume,
   stop,

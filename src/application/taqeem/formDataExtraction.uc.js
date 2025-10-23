@@ -10,6 +10,7 @@ const formatDateTime = (value) => {
         const yyyy = value.getFullYear();
         const mm = String(value.getMonth() + 1).padStart(2, '0');
         const dd = String(value.getDate()).padStart(2, '0');
+        console.log("Formatting Date object:", value, "to", `${yyyy}-${mm}-${dd}`);
         return `${yyyy}-${mm}-${dd}`;
     }
     

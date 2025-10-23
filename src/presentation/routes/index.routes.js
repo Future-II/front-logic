@@ -8,6 +8,7 @@ const reportsRouter = require('./reports.routes'); // Add this line
 const ticketRouter = require('./ticket.routes');
 const messageRouter = require('./message.routes');
 const companyRouter = require('./companies.routes');
+const excelDataRoutes = require('./excelData.routes');
 
 const router = express.Router();
 router.use('/api/users', userRoutes);
@@ -17,6 +18,7 @@ router.use('/api/reports', reportsRouter); // Add this line
 router.use('/api/tickets', ticketRouter);
 router.use('/api/messages', messageRouter);
 router.use('/api/companies', companyRouter);
+router.use('/api/excel-data', excelDataRoutes);
 
 router.get('/', (_req, res) => {
   res.json({ message: 'Welcome to front-logic API' });

@@ -15,6 +15,7 @@ MONGO_URI="mongodb+srv://test:JUL3OvyCSLVjSixj@assetval.pu3bqyr.mongodb.net/proj
 client = AsyncIOMotorClient(MONGO_URI)
 db = client["projectForever"]
 
+
 async def wait_for_element(page, selector, timeout=30, check_interval=0.5):
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -290,7 +291,8 @@ async def get_first_macro_id(page):
 
 async def fill_macro_form(page, macro_id, macro_data, field_map, field_types):
     await page.get(f"https://qima.taqeem.sa/report/macro/{macro_id}/edit")
-    await asyncio.sleep(0.5)
+    await wait_for_element(page, "#value_base_id", timeout=5)
+    
     try:
         result = await fill_form(page, macro_data, field_map, field_types, is_last_step=True, skip_special_fields=True)
         return result

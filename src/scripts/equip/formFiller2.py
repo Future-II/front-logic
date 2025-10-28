@@ -16,7 +16,6 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client["projectForever"]
 
 def emit_progress(status, message, reportId, **kwargs):
-    """Emit progress updates that Node.js will forward to Socket.IO clients"""
     progress_data = {
         "type": "PROGRESS",
         "status": status,
@@ -142,9 +141,6 @@ async def wait_for_element(page, selector, timeout=30, check_interval=0.5):
     return None
 
 _location_cache = {}
-
-_location_cache = {}
-
 async def set_location(page, country_name, region_name, city_name):
     try:
         import re, unicodedata
@@ -497,7 +493,9 @@ async def get_first_macro_id(page):
 
 async def fill_macro_form(page, macro_id, macro_data, field_map, field_types, control_state=None, report_id=None):
     await page.get(f"https://qima.taqeem.sa/report/macro/{macro_id}/edit")
-    await asyncio.sleep(0.5)
+    
+    await wait_for_element(page, "#value_base_id", timeout=30)
+
     try:
         result = await fill_form(page, macro_data, field_map, field_types, is_last_step=True, 
                                 skip_special_fields=True, control_state=control_state, report_id=report_id)
@@ -699,7 +697,7 @@ async def runFormFill2(browser, record_id, tabs_num=3, control_state=None):
                     await p.close()
 
                 emit_progress("CHECKING", "Checking for incomplete macros", record_id)
-                checker_result = await check_incomplete_macros_after_creation(browser, record_id, browsers_num=tabs_num)
+                checker_result = await check_incomplete_macros(browser, record_id, browsers_num=tabs_num)
                 results.append({"status":"CHECKER_RESULT", "recordId":str(record["_id"]), "result":checker_result})
 
                 if checker_result["macro_count"] > 0:
@@ -817,7 +815,7 @@ async def runCheckMacros(browser, record_id, tabs_num=3):
             return {"status": "FAILED", "error": "Invalid record_id"}
     
         emit_progress("CHECK_STARTED", "Checking incomplete macros", record_id)
-        check_result = await check_incomplete_macros(browser, record_id)
+        check_result = await check_incomplete_macros(browser, record_id, browsers_num=tabs_num)
         emit_progress("CHECK_COMPLETE", f"Found {check_result.get('macro_count', 0)} incomplete macros", 
                      record_id, result=check_result)
         

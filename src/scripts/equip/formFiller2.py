@@ -9,7 +9,8 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from formSteps2 import form_steps, macro_form_config
-from addAssets import check_incomplete_macros_after_creation, check_incomplete_macros
+from addAssets import check_incomplete_macros
+from utils import wait_for_table_rows
 
 MONGO_URI="mongodb+srv://test:JUL3OvyCSLVjSixj@assetval.pu3bqyr.mongodb.net/projectForever"
 client = AsyncIOMotorClient(MONGO_URI)
@@ -119,7 +120,7 @@ async def handle_without_base_report(browser, record, tabs_num=3, control_state=
         await p.close()
     
     emit_progress("CHECKING_INCOMPLETE", "Checking for incomplete macros", record_id)
-    checker_result = await check_incomplete_macros_after_creation(browser, record_id, browsers_num=tabs_num)
+    checker_result = await check_incomplete_macros(browser, record_id, browsers_num=tabs_num)
     results.append({"status": "CHECKER_RESULT", "recordId": str(record["_id"]), "result": checker_result})
     
     if checker_result.get("macro_count", 0) > 0:
@@ -139,6 +140,7 @@ async def wait_for_element(page, selector, timeout=30, check_interval=0.5):
             pass
         await asyncio.sleep(check_interval)
     return None
+
 
 _location_cache = {}
 async def set_location(page, country_name, region_name, city_name):
@@ -468,28 +470,6 @@ async def handle_macros_multi(browser, record, tab_nums=3, batch_size=10, contro
 
     return True
 
-async def get_first_macro_id(page):
-    tbody = await wait_for_element(page, "#m-table", timeout=100)
-    if not tbody:
-        return {"status": "FAILED", "error": "Could not find macro table"}
-    
-    trs = await tbody.query_selector_all("tr") if tbody else []
-    if not trs:
-        return {"status": "FAILED", "error": "Could not find macro table rows"}
-    
-    first_tr = trs[1] if trs else None
-    if not first_tr:
-        return {"status": "FAILED", "error": "Could not find macro table row"}
-    tds = first_tr.children if first_tr else []
-    if not tds:
-        return {"status": "FAILED", "error": "Could not find macro table row cells"}
-    first_td = tds[0]
-    print(f"first_td: {first_td}")
-    id = first_td.text
-    print(f"id: {id}")
-    if not id:
-        return {"status": "FAILED", "error": "Could not find macro table row link"}
-    return int(id) if id else None
 
 async def fill_macro_form(page, macro_id, macro_data, field_map, field_types, control_state=None, report_id=None):
     await page.get(f"https://qima.taqeem.sa/report/macro/{macro_id}/edit")
@@ -508,7 +488,8 @@ async def handle_macro_edits(browser, record, tabs_num=3, control_state=None, re
     from worker_equip import check_control
     
     asset_data = record.get("asset_data", [])
-    if not asset_data: return True
+    if not asset_data: 
+        return True
 
     if control_state:
         await check_control(control_state)
@@ -517,39 +498,93 @@ async def handle_macro_edits(browser, record, tabs_num=3, control_state=None, re
                   total=len(asset_data), current=0)
 
     main_page = browser.tabs[0]
-    first_macro_id = await get_first_macro_id(main_page)
-    if first_macro_id is None:
-        return {"status":"FAILED","error":"Could not determine first macro id"}
-    print(f"First macro id: {first_macro_id} with type {type(first_macro_id)}")
     
+    # Get ALL macro IDs from ALL pages using multi-tab approach
+    macro_ids = await get_all_macro_ids_parallel(browser, record, tabs_num)
+    if not macro_ids:
+        return {"status":"FAILED","error":"Could not find any macro IDs in table"}
+    
+    print(f"Found {len(macro_ids)} macro IDs in table: {macro_ids[:10]}...") 
+    
+    if len(macro_ids) < len(asset_data):
+        return {"status":"FAILED","error":f"Not enough macros in table ({len(macro_ids)}) for assets ({len(asset_data)})"}
 
-    chunks = balanced_chunks(asset_data, tabs_num)
+    # FIX 1: Ensure we have enough unique macro IDs
+    if len(asset_data) > len(set(macro_ids)):
+        print(f"[WARNING] Duplicate macro IDs detected. Unique IDs: {len(set(macro_ids))}, Total IDs: {len(macro_ids)}. Clearing Duplicates...", file=sys.stderr)
+        unique_macro_ids = list(set(macro_ids))
+        
+        # Ensure we have enough unique IDs
+        if len(unique_macro_ids) < len(asset_data):
+            return {"status":"FAILED","error":f"Not enough unique macro IDs ({len(unique_macro_ids)}) for assets ({len(asset_data)})"}
+            
+        macro_ids_to_use = unique_macro_ids[:len(asset_data)]
+    else:
+        macro_ids_to_use = macro_ids[:len(asset_data)]
+
+    # FIX 2: Single array update - fastest approach
+    try:
+        # Update all assets with their IDs in one operation
+        updated_assets = []
+        for i, (asset, macro_id) in enumerate(zip(asset_data, macro_ids_to_use)):
+            updated_asset = asset.copy()
+            updated_asset["id"] = int(macro_id)
+            updated_assets.append(updated_asset)
+            print(f"Assigned macro ID {macro_id} to asset index {i}")
+        
+        # Single database update
+        await db.halfreports.update_one(
+            {"_id": record["_id"]},
+            {"$set": {"asset_data": updated_assets}}
+        )
+        print(f"Single update completed: {len(updated_assets)} assets updated")
+        
+        # Update the in-memory record
+        record["asset_data"] = updated_assets
+        
+    except Exception as e:
+        print(f"[SINGLE UPDATE ERROR] {e}", file=sys.stderr)
+        return {"status":"FAILED","error":f"Single update failed: {str(e)}"}
+
+    # FIX 3: Verify all assets have IDs before proceeding
+    missing_ids = [i for i, asset in enumerate(record["asset_data"]) if not asset.get("id")]
+    if missing_ids:
+        return {"status":"FAILED","error":f"Missing macro IDs for assets at indices: {missing_ids}"}
+
+    print(f"Final asset data with IDs: {[(i, asset.get('id')) for i, asset in enumerate(record['asset_data'])]}")
+
+    # Now process the edits with the assigned IDs
+    asset_chunks = balanced_chunks(record["asset_data"], tabs_num)
+    
     pages = [main_page] + [await browser.get("", new_tab=True) for _ in range(tabs_num - 1)]
 
     completed = 0
 
-    async def process_chunk(chunk, page, offset):
+    async def process_chunk(asset_chunk, page, chunk_index):
         nonlocal completed
-        for idx, macro in enumerate(chunk):
+        print(f"Processing chunk {chunk_index} with {len(asset_chunk)} assets")
+        
+        for asset_index, asset in enumerate(asset_chunk):
             if control_state:
                 await check_control(control_state)
             
-            macro_id = first_macro_id + idx + offset
-            element_index = offset + idx
-
-            try:
-                res = await db.halfreports.update_one(
-                    {"_id": record["_id"]},
-                    {"$set": {f"asset_data.{element_index}.id": int(macro_id)}}
-                )
-            except Exception as e:
-                print(f"[DB PATCH ERROR] {e}", file=sys.stderr)
+            macro_id = asset.get("id")
+            
+            # FIX 4: Add detailed debugging
+            if macro_id is None:
+                print(f"ERROR: macro_id is None for asset index {asset_index} in chunk {chunk_index}")
+                print(f"Asset data: {asset}")
+                emit_progress("MACRO_EDIT_ERROR", f"Missing macro ID for asset", report_id, 
+                            error="Missing macro ID", asset_index=asset_index)
+                continue
             
             try:
+                print(f"Editing macro {macro_id} (chunk {chunk_index}, asset {asset_index})")
+                
                 await fill_macro_form(
                     page,
                     macro_id,
-                    macro,
+                    asset,
                     macro_form_config["field_map"],
                     macro_form_config["field_types"],
                     control_state,
@@ -558,19 +593,194 @@ async def handle_macro_edits(browser, record, tabs_num=3, control_state=None, re
                 
                 completed += 1
                 emit_progress("MACRO_EDIT", f"Edited macro {macro_id}", report_id, 
-                            total=len(asset_data), current=completed, 
-                            percentage=round((completed/len(asset_data))*100, 2))
+                            total=len(record["asset_data"]), current=completed, 
+                            percentage=round((completed/len(record["asset_data"]))*100, 2))
             except Exception as e:
                 emit_progress("MACRO_EDIT_ERROR", f"Failed to edit macro {macro_id}", report_id, 
                             error=str(e), macro_id=macro_id)
 
-    tasks = [process_chunk(chunk, page, sum(len(c) for c in chunks[:i])) for i, (page, chunk) in enumerate(zip(pages, chunks))]
+    # Create tasks for each chunk
+    tasks = []
+    for i, (page, asset_chunk) in enumerate(zip(pages, asset_chunks)):
+        if asset_chunk:  # Only create task if chunk has work
+            tasks.append(process_chunk(asset_chunk, page, i))
+    
     await asyncio.gather(*tasks)
     
-    emit_progress("MACRO_EDIT_COMPLETE", f"Completed editing {len(asset_data)} macros", report_id, 
-                  total=len(asset_data), current=completed)
+    # Close extra tabs
+    for page in pages[1:]:
+        await page.close()
     
-    return True
+    emit_progress("MACRO_EDIT_COMPLETE", f"Completed editing {len(record['asset_data'])} macros", report_id, 
+                  total=len(record["asset_data"]), current=completed)
+    
+    return {"status": "SUCCESS", "message": f"Completed editing {completed} macros"}
+
+
+async def get_all_macro_ids_parallel(browser, record, tabs_num=3):
+    """Get all macro IDs from ALL pages using multi-tab parallel processing"""
+    try:
+        report_id = record.get("report_id")
+        if not report_id:
+            print("No report_id found in record")
+            return []
+            
+        base_url = f"https://qima.taqeem.sa/report/{report_id}"
+        main_page = browser.tabs[0]
+        await main_page.get(base_url)
+        await asyncio.sleep(2)
+        await wait_for_element(main_page, "li", timeout=30)
+
+        # Get total number of pages from pagination (same as check_incomplete_macros)
+        pagination_links = await main_page.query_selector_all('ul.pagination li a')
+        page_numbers = []
+
+        for link in pagination_links:
+            text = link.text
+            if text and text.strip().isdigit():
+                page_numbers.append(int(text.strip()))
+
+        total_pages = max(page_numbers) if page_numbers else 1
+        print(f"[MACRO_ID] Found {total_pages} pages to process with {tabs_num} tabs")
+
+        # Create pages for parallel processing
+        pages = [main_page] + [await browser.get("about:blank", new_tab=True) for _ in range(min(tabs_num - 1, total_pages - 1))]
+
+        # Balanced page distribution (same as check_incomplete_macros)
+        def get_balanced_page_distribution(total_pages, num_tabs):
+            if total_pages <= 0 or num_tabs <= 0:
+                return [[] for _ in range(num_tabs)]
+            
+            base_pages_per_tab = total_pages // num_tabs
+            remainder = total_pages % num_tabs
+            
+            distribution = []
+            current_page = 1
+            
+            for tab_index in range(num_tabs):
+                pages_this_tab = base_pages_per_tab + (1 if tab_index < remainder else 0)
+                
+                if pages_this_tab > 0:
+                    tab_pages = list(range(current_page, current_page + pages_this_tab))
+                    distribution.append(tab_pages)
+                    current_page += pages_this_tab
+                else:
+                    distribution.append([])
+            
+            return distribution
+
+        page_chunks = get_balanced_page_distribution(total_pages, len(pages))
+        print(f"[MACRO_ID] Page distribution: {[len(chunk) for chunk in page_chunks]} pages per tab")
+        
+        all_macro_ids = []
+        macro_ids_lock = asyncio.Lock()
+
+        async def process_pages_chunk(page, page_numbers_chunk, tab_id):
+            local_macro_ids = []
+            
+            print(f"[MACRO_ID-TAB-{tab_id}] Processing pages: {page_numbers_chunk}")
+            
+            for page_num in page_numbers_chunk:
+                print(f"[MACRO_ID-TAB-{tab_id}] Processing page {page_num}")
+                
+                try:
+                    # Navigate to the specific page
+                    page_url = f"{base_url}?page={page_num}" if page_num > 1 else base_url
+                    await page.get(page_url)
+                    await asyncio.sleep(2)
+                    
+                    # Process all sub-pages (internal pagination)
+                    while True:
+                        # Wait for table to load
+                        await asyncio.sleep(2)
+                        table_ready = await wait_for_table_rows(page, timeout=100)
+                        if not table_ready:
+                            print(f"[MACRO_ID-TAB-{tab_id}] Table not found on page {page_num}, breaking")
+                            break
+
+                        
+                        # Get macro IDs from current page/sub-page
+                        await asyncio.sleep(3)
+                        macro_cells = await safe_query_selector_all(page, "#m-table tbody tr td:nth-child(1) a")
+                        if not macro_cells:
+                            print(f"[MACRO_ID-TAB-{tab_id}] No macro cells found on page {page_num}, breaking")
+                            break
+                        
+                        start_index = 0
+                        processed_count = 0
+                        
+                        for i in range(start_index, len(macro_cells)):
+                            try:
+                                macro_cell = macro_cells[i]
+                                macro_id_text = macro_cell.text if macro_cell else None
+                                
+                                if not macro_id_text or not macro_id_text.strip():
+                                    continue
+                                    
+                                macro_id = int(macro_id_text.strip())
+                                local_macro_ids.append(macro_id)
+                                processed_count += 1
+                                
+                            except (ValueError, TypeError) as e:
+                                print(f"[MACRO_ID-TAB-{tab_id}] WARNING Invalid macro ID on row {i}: {e}")
+                                continue
+                            except Exception as e:
+                                print(f"[MACRO_ID-TAB-{tab_id}] ERROR processing row {i}: {e}")
+                                continue
+                        
+                        print(f"[MACRO_ID-TAB-{tab_id}] Page {page_num}: Found {processed_count} macro IDs")
+                        
+                        # Check for next button (internal pagination)
+                        next_btn = await wait_for_element(page, "#m-table_next", timeout=5)
+                        if next_btn:
+                            attributes = next_btn.attrs
+                            classes = attributes.get("class_")
+                            if classes and "disabled" not in classes:
+                                print(f"[MACRO_ID-TAB-{tab_id}] Clicking next sub-page button on page {page_num}")
+                                await next_btn.click()
+                                await asyncio.sleep(3)
+                                continue
+                        
+                        # No more sub-pages, break inner loop
+                        print(f"[MACRO_ID-TAB-{tab_id}] No more sub-pages on page {page_num}")
+                        break
+                        
+                except Exception as e:
+                    print(f"[MACRO_ID-TAB-{tab_id}] ERROR processing page {page_num}: {str(e)}")
+                    continue
+            
+            async with macro_ids_lock:
+                all_macro_ids.extend(local_macro_ids)
+                
+            print(f"[MACRO_ID-TAB-{tab_id}] Completed processing, found {len(local_macro_ids)} macro IDs")
+
+        # Process pages in parallel
+        tasks = []
+        for i, (page, chunk) in enumerate(zip(pages, page_chunks)):
+            if chunk:  # Only create tasks for tabs that have pages to process
+                tasks.append(process_pages_chunk(page, chunk, i))
+
+        await asyncio.gather(*tasks)
+
+        # Close extra tabs (we'll recreate them for the editing phase)
+        for p in pages[1:]:
+            await p.close()
+
+        print(f"[MACRO_ID] Total macro IDs found: {len(all_macro_ids)}")
+        return all_macro_ids
+
+    except Exception as e:
+        print(f"[MACRO_ID] Error in get_all_macro_ids_parallel: {str(e)}")
+        return []
+
+
+async def safe_query_selector_all(page, selector):
+    """Safely query multiple elements without stale element issues"""
+    try:
+        return await page.query_selector_all(selector)
+    except Exception as e:
+        print(f"Error querying {selector}: {e}")
+        return []
 
 def balanced_chunks(lst, n):
     k, m = divmod(len(lst), n)
@@ -677,10 +887,12 @@ async def runFormFill2(browser, record_id, tabs_num=3, control_state=None):
                     results.append({"status":"FAILED","step":"report_id","recordId":str(record["_id"]),"error":"Could not determine report_id"})
                     return {"status":"FAILED","results":results}
 
-                res = await db.halfreports.update_one(
+                await db.halfreports.update_one(
                     {"_id": record["_id"]}, 
                     {"$set": {"report_id": form_id}}
                 )
+
+                record["report_id"] = form_id
                 
                 emit_progress("REPORT_SAVED", f"Report created with ID: {form_id}", record_id, form_id=form_id)
 
@@ -691,10 +903,6 @@ async def runFormFill2(browser, record_id, tabs_num=3, control_state=None):
                     return {"status":"FAILED","results":results}
 
                 results.append({"status":"MACRO_EDIT_SUCCESS","message":"All macros filled","recordId":str(record["_id"])})
-
-                pages = browser.tabs
-                for p in pages[1:]:
-                    await p.close()
 
                 emit_progress("CHECKING", "Checking for incomplete macros", record_id)
                 checker_result = await check_incomplete_macros(browser, record_id, browsers_num=tabs_num)
@@ -784,11 +992,11 @@ async def retryMacros(browser, record_id, tabs_num=3, control_state=None):
                     )
 
                     completed += 1
-                    status = "SUCCESS" if submit_state == 1 else "INCOMPLETE"
-                    emit_progress("RETRY_PROGRESS", f"Retried macro {macro_id}: {status}", record_id, 
+                    submit_status = "SUCCESS" if submit_state == 1 else "INCOMPLETE"
+                    emit_progress("RETRY_PROGRESS", f"Retried macro {macro_id} - Status: {submit_status}", record_id, 
                                 total=len(retry_assets), current=completed, 
                                 percentage=round((completed/len(retry_assets))*100, 2),
-                                macro_id=macro_id, status=status)
+                                macro_id=macro_id, submit_state=submit_state)
 
                 except Exception as e:
                     emit_progress("RETRY_ERROR", f"Failed to retry macro {macro_id}", record_id, 

@@ -9,6 +9,7 @@ const { noBaseDataExtraction } = require("../../application/taqeem/noBaseDataExt
 const { formDataExtraction } = require("../../application/taqeem/formDataExtraction.uc.js")
 const { getHalfReportByIdUC } = require("../../application/reports/getHalfReportById.uc.js")
 const { checkHalfReport } = require("../../application/reports/checkHalfReport.uc.js")
+const { deleteHalfReportUC } = require("../../application/taqeem/deleteHalfReport.uc.js")
 
 let pyWorker = null;
 let stdoutBuffer = "";
@@ -366,8 +367,11 @@ const reportDataExtraction = async (req, res, next) => {
 const getAssetsByUserId = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const assets = await getAssetsByUserIdUC(userId);
-    res.status(200).json(assets);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const result = await getAssetsByUserIdUC(userId, page, limit);
+    res.status(200).json(result);
   } catch (err) {
     console.error("[getAssetsByUserId] error:", err);
     next(err instanceof AppError ? err : new AppError(String(err), 500));
@@ -377,8 +381,19 @@ const getAssetsByUserId = async (req, res, next) => {
 const getHalfReportsByUserId = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const reports = await getHalfReportsByUserIdUC(userId);
-    res.status(200).json(reports);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    
+    console.log('Fetching reports - User:', userId, 'Page:', page, 'Limit:', limit);
+    
+    const result = await getHalfReportsByUserIdUC(userId, page, limit);
+    
+    console.log('Result:', { 
+      reportsCount: result.assets?.length, 
+      pagination: result.pagination
+    });
+    
+    res.status(200).json(result);
   } catch (err) {
     console.error("[getHalfReportsByUserId] error:", err);
     next(err instanceof AppError ? err : new AppError(String(err), 500));
@@ -552,6 +567,25 @@ const getHalfReportById = async (req, res, next) => {
   }
 };
 
+const deleteHalfReport = async(req, res, next) => {
+  const { reportId } = req.params;
+
+  try {
+    const deletedReport = await deleteHalfReportUC(reportId);
+    res.json({
+      status: "SUCCESS",
+      data: deletedReport
+    });
+  }
+  catch(e){
+    console.error("[ERROR]:", e)
+    res.json({
+      status: "FAILED",
+      message: e
+    })
+  }
+}
+
 const checkAssets = async (req, res, next) => {
   const { reportId } = req.body;
   
@@ -603,6 +637,7 @@ module.exports = {
   pause,
   resume,
   stop,
+  deleteHalfReport,
   sendCommand,
   closeWorker,
   setSocketIO,  // Export to allow server.js to inject io instance

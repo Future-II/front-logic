@@ -15,6 +15,7 @@ const {
   checkMacros,
   pause,
   stop,
+  deleteHalfReport,
   resume,
   retryMacros,
   getHalfReportsByUserId,
@@ -66,6 +67,7 @@ scriptRouter.get('/equip/report', authMiddleware, getHalfReportById);
 scriptRouter.post('/equip/check', authMiddleware, checkMacros);
 scriptRouter.post('/equip/retry', authMiddleware, retryMacros);
 scriptRouter.post('/equip/checkReport', authMiddleware, setCheck);
+scriptRouter.delete("/equip/report/:reportId", authMiddleware, deleteHalfReport);
 
 scriptRouter.post('/equip/pause', authMiddleware, pause);
 scriptRouter.post('/equip/resume', authMiddleware, resume);

@@ -12,7 +12,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: ['http://localhost:5174', 'http://127.0.0.1:5174'],
     methods: ["GET", "POST"]
   },
   pingInterval: 20000,      // Reduced from 25s to 20s
@@ -356,7 +356,7 @@ async function initializeServer() {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('✅ MongoDB connected');
     
-    server.listen(PORT, () => {
+    server.listen(process.env.PORT || 7000, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
       console.log(`📊 Socket.IO configured with pingInterval: 20s, pingTimeout: 10s`);
     });
